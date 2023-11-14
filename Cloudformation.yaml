@@ -1,0 +1,553 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation for the blog on GenAI with Redshift'
+Parameters:
+  DatabaseName:
+    Description: The name of the first database to be created when the cluster is created
+    Type: String
+    Default: dev
+    AllowedPattern: "([a-z]|[0-9])+"
+  AdminUsername:
+    Description: The user name that is associated with the admin user account for the cluster that is being created
+    Type: String
+    Default: awsuser
+    AllowedPattern: "([a-z])([a-z]|[0-9])*"
+  AdminPassword:
+    Description: The password that is associated with the admin user account for the cluster that is being created. Default is Awsuser123
+    Type: String
+    Default: Awsuser123
+    NoEcho: 'true'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[^\x00-\x20\x22\x27\x2f\x40\x5c\x7f-\uffff]+'
+  BaseRPU:
+    Description: Base RPU for Redshift Serverless Workgroup.
+    Type: Number
+    MinValue: 8
+    MaxValue: 512
+    Default: 16
+    AllowedValues: [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 264, 272, 280, 288, 296, 304, 312, 320, 328, 336, 344, 352, 360, 368, 376, 384, 392, 400, 408, 416, 424, 432, 440, 448, 456, 464, 472, 480, 488, 496, 504, 512]
+  PortNumber:
+    Description: The port number on which the destination datawarehouse accepts incoming connections.
+    Type: Number
+    Default: '5439'
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: "10.0.0.0/16"
+    Public0:
+      CIDR: "10.0.0.0/24"
+    Public1:
+      CIDR: "10.0.1.0/24"
+    Private0:
+      CIDR: "10.0.2.0/24"
+    Private1:
+      CIDR: "10.0.3.0/24"
+
+  # This mapping accounts for the scenario when certain AZs
+  # are not available to use (this differs on a per account
+  # per customer basis). E.g., if the 'b' AZ is not available
+  # in a specific region in one's account then updating the
+  # list contained in the mapping below here will allow a
+  # different AZ to be chosen.
+  AZRegions:
+    ap-northeast-1:
+      AZs: ["a", "b"]
+    ap-northeast-2:
+      AZs: ["a", "b"]
+    ap-south-1:
+      AZs: ["a", "b"]
+    ap-southeast-1:
+      AZs: ["a", "b"]
+    ap-southeast-2:
+      AZs: ["a", "b"]
+    ca-central-1:
+      AZs: ["a", "b"]
+    eu-central-1:
+      AZs: ["a", "b"]
+    eu-west-1:
+      AZs: ["a", "b"]
+    eu-west-2:
+      AZs: ["a", "b"]
+    sa-east-1:
+      AZs: ["a", "b"]
+    us-east-1:
+      AZs: ["a", "b", "c", "d"]
+    us-east-2:
+      AZs: ["a", "b", "c", "d"]
+    us-west-1:
+      AZs: ["a", "b", "c", "d"]
+    us-west-2:
+      AZs: ["a", "b", "c", "d"]
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "Connection Details"
+      Parameters:
+      - DatabaseName
+      - AdminUsername
+      - AdminPassword
+      - PortNumber
+Resources:
+  BedrockManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AllowBedrockfunctions
+          Effect: Allow
+          Action:
+          - "bedrock:*"
+          Resource: "*"
+  RedshiftServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: RedshiftImmersionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - redshift.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - redshift-serverless.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - glue.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - scheduler.redshift.amazonaws.com
+          Action:
+          - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+      - arn:aws:iam::aws:policy/AmazonRedshiftFullAccess
+      - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+      - arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      - !Ref BedrockManagedPolicy
+  GlueLoadRedshiftRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "GlueLoadRedshiftRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - glue.amazonaws.com
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: LambdaCloudFormationPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource:
+            - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}"
+            - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}"
+            - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}/*"
+            - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}/*"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      - arn:aws:iam::aws:policy/AmazonRDSDataFullAccess
+  LambdaStartCrawler:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "StartGlueCrawler"
+      Role: !GetAtt 'GlueLoadRedshiftRole.Arn'
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import logging
+
+          logging.basicConfig()
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
+
+          glue = boto3.client('glue')
+
+          def handler(event, context):
+            logger.info(json.dumps(event))
+            if event['RequestType'] != 'Create':
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'NA'})
+            else:
+                try:
+                  crawler = event['ResourceProperties']['crawler']
+
+                  response = glue.start_crawler(
+                    Name=crawler)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'Glue Crawler Started successfully.'})
+
+                except Exception as e:
+                  logger.info(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Data': 'Glue Crawler Issue'})
+      Handler: index.handler
+      Runtime: python3.9
+    DependsOn:
+    - GlueLoadRedshiftRole
+  GlueExternalDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId:
+        Ref: AWS::AccountId
+      DatabaseInput:
+        Name: !Sub "hotelbookingdb"
+        Description: "aws glue data catalog database for hotel booking information"
+  GlueCrawlerBookingInfo:
+    Type: AWS::Glue::Crawler
+    DependsOn:
+    - RedshiftServiceRole
+    Properties:
+      Role: !GetAtt 'RedshiftServiceRole.Arn'
+      Name: !Sub "BookingInformationCrawler"
+      DatabaseName: !Ref GlueExternalDatabase
+      Targets:
+        S3Targets:
+        - Path: "s3://redshift-blogs/genai-prompt-engineering/travel-data/"
+  InitStartCrawlerBooking:
+    Type: Custom::InitStartCrawlerBooking
+    DependsOn:
+    - LambdaStartCrawler
+    - GlueCrawlerBookingInfo
+    Properties:
+      ServiceToken: !GetAtt 'LambdaStartCrawler.Arn'
+      crawler: !Ref GlueCrawlerBookingInfo
+  RedshiftNamespace:
+    Type: 'AWS::RedshiftServerless::Namespace'
+    Properties:
+      AdminUsername:
+        Ref: AdminUsername
+      AdminUserPassword:
+        Ref: AdminPassword
+      DbName:
+        Ref: DatabaseName
+      NamespaceName: !Sub
+      - 'redshift-genai-ns-${RandomGUID}'
+      - {RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref 'AWS::StackId']]]]}
+      IamRoles:
+      - !GetAtt 'RedshiftServiceRole.Arn'
+      DefaultIamRoleArn: !GetAtt 'RedshiftServiceRole.Arn'
+  RedshiftWorkgroup:
+    Type: 'AWS::RedshiftServerless::Workgroup'
+    Properties:
+      WorkgroupName: !Sub
+      - 'redshift-genai-wg-${RandomGUID}'
+      - {RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref 'AWS::StackId']]]]}
+      NamespaceName: !Sub
+      - 'redshift-genai-ns-${RandomGUID}'
+      - {RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref 'AWS::StackId']]]]}
+      ConfigParameters:
+      - ParameterKey: enable_case_sensitive_identifier
+        ParameterValue: 'true'
+      BaseCapacity:
+        Ref: BaseRPU
+      PubliclyAccessible: 'false'
+      SubnetIds:
+      - Ref: Subnet1
+      - Ref: Subnet2
+      - Ref: Subnet3
+      - Ref: Subnet4
+      SecurityGroupIds:
+      - Ref: SecurityGroup
+    DependsOn:
+    - RedshiftNamespace
+  RedshiftServerlessSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: RedshiftServerlessSecret
+      Description: This secret is for Redshift Serverless
+      SecretString: '{"username":"awsuser","password":"Awsuser123"}'
+      Tags:
+      - Key: RedshiftDataFullAccess
+        Value: serverless
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.0.0/26
+      #AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone:
+        Fn::Sub:
+        - "${AWS::Region}${AZ}"
+        - AZ: !Select [0, !FindInMap ["AZRegions", !Ref "AWS::Region", "AZs"]]
+      VpcId:
+        Ref: VPC
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.1.0/26
+      #AvailabilityZone: !Select [1, !GetAZs ""]
+      AvailabilityZone:
+        Fn::Sub:
+        - "${AWS::Region}${AZ}"
+        - AZ: !Select [1, !FindInMap ["AZRegions", !Ref "AWS::Region", "AZs"]]
+      VpcId:
+        Ref: VPC
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.2.0/26
+      #AvailabilityZone: !Select [2, !GetAZs ""]
+      AvailabilityZone:
+        Fn::Sub:
+        - "${AWS::Region}${AZ}"
+        - AZ: !Select [2, !FindInMap ["AZRegions", !Ref "AWS::Region", "AZs"]]
+      VpcId:
+        Ref: VPC
+  Subnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.3.0/26
+      #AvailabilityZone: !Select [3, !GetAZs ""]
+      AvailabilityZone:
+        Fn::Sub:
+        - "${AWS::Region}${AZ}"
+        - AZ: !Select [0, !FindInMap ["AZRegions", !Ref "AWS::Region", "AZs"]]
+      VpcId:
+        Ref: VPC
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group
+      VpcId:
+        Ref: VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref 'SSHLocation'
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: "0.0.0.0/0"
+  SecurityGroupSelfReference:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Self Referencing Rule
+      FromPort: -1
+      IpProtocol: -1
+      GroupId: !GetAtt [SecurityGroup, GroupId]
+      SourceSecurityGroupId: !GetAtt [SecurityGroup, GroupId]
+      ToPort: -1
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: VPC
+      InternetGatewayId:
+        Ref: InternetGateway
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId:
+        Ref: RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: Subnet1
+      RouteTableId:
+        Ref: RouteTable
+  SubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: Subnet2
+      RouteTableId:
+        Ref: RouteTable
+  SubnetRouteTableAssociation3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: Subnet3
+      RouteTableId:
+        Ref: RouteTable
+  SubnetRouteTableAssociation4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: Subnet4
+      RouteTableId:
+        Ref: RouteTable
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: 'Gateway'
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+      - !Ref RouteTable
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref RedshiftServiceRole
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment1: Configure bootstrap packages
+      'AWS::CloudFormation::Init':
+        configSets:
+          Install:
+          - Install
+        Install:
+          packages:
+            yum:
+              git: []
+              wget: []
+    Properties:
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref Subnet1
+      KeyName: !Ref 'KeyName'
+      SecurityGroupIds:
+      - Ref: SecurityGroup
+      ImageId: !Ref 'LatestAmiId'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          amazon-linux-extras install python3.8
+          rm /usr/bin/python3
+          ln -s /usr/bin/python3.8 /usr/bin/python3
+          yum install git -y
+          wget https://bootstrap.pypa.io/get-pip.py
+          python3 get-pip.py
+          python3 -m pip install streamlit==1.28.1
+          python3 -m pip install boto3
+          python3 -m pip install langchain
+          python3 -m pip install anthropic
+          cd /home/ec2-user
+          git clone https://github.com/rkrao89/personalized_travel_itinerary_planner.git
+          chmod -R 777 personalized_travel_itinerary_planner
+      Tags:
+      - Key: Name
+        Value: ec2-bedrock-client
+
+Outputs:
+  NamespaceName:
+    Description: Redshift Serverless Namespace Name
+    Value:
+      Ref: RedshiftNamespace
+  Workgroupname:
+    Description: Redshift Serverless Workgroup Name
+    Value:
+      Ref: RedshiftWorkgroup
+  AdminUsername:
+    Description: Username to login to your Redshift Serverless DW
+    Value:
+      Ref: AdminUsername
+  AdminPassword:
+    Description: Password to login to your Redshift Serverless DW
+    Value:
+      Ref: AdminPassword
+  VPC:
+    Description: VPC ID for this configuration
+    Value:
+      Ref: VPC
+  PortNumber:
+    Description: Redshift port number for connections and security
+    Value:
+      Ref: PortNumber
+  RedshiftServiceRoleNameArn:
+    Description: Name of Redshift Role with ARN FN tag
+    Value:
+      Fn::GetAtt: [RedshiftServiceRole, Arn]
+  RedshiftClusterSecurityGroupName:
+    Description: Name of security group
+    Value:
+      Ref: SecurityGroup
+  RedshiftDatabaseSecret:
+    Description: Secret Name and ARN that will be used to connect to Redshift Cluster
+    Value:
+      Fn::GetAtt: [RedshiftServerlessSecret, Id]
+  GlueExternalDatabaseName:
+    Description: "The name of the external database"
+    Value: !Ref GlueExternalDatabase
+  GlueCrawlerName:
+    Description: "The name of the external database"
+    Value: !Ref GlueCrawlerBookingInfo
