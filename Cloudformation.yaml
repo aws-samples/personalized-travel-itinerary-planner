@@ -503,7 +503,7 @@ Resources:
           python3 -m pip install anthropic
           cd /home/ec2-user
           git clone https://github.com/aws-samples/personalized-travel-itinerary-planner.git
-          chmod -R 777 personalized_travel_itinerary_planner
+          chmod -R 777 personalized-travel-itinerary-planner
       Tags:
       - Key: Name
         Value: ec2-bedrock-client
