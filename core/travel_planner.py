@@ -95,11 +95,11 @@ def get_user_data(user_id):
         user_intro_text = "This is a new user in our system and we do not have any information about this user"
     
     if travel_itinerary:
-        travel_itinerary_text = "Below are the list of cities " + str(user_first_name) + " will travel to. \\n" + str(travel_itinerary)
+        travel_itinerary_text = "Below are the list of cities " + str(user_first_name) + " will be travelling to. \\n" + str(travel_itinerary)
     else:
         travel_itinerary_text = str(user_first_name) + " does not have any upcoming travel that we know of."
 
-    addtl_instructions = "Can you answer the question mentioned below, considering "+str(user_first_name)+ "'s hobbies, interests, favorite food and travel plans mentioned above? Start your response with Hello "+str(user_first_name) 
+    addtl_instructions = "Can you answer the question mentioned above, considering "+str(user_first_name)+ "'s hobbies, interests, favorite food and travel plans mentioned above? Do not repeat the cities and countries that "+ str(user_first_name)+" is already travelling to. Start your response with Hello "+str(user_first_name) 
 
     prompt_text = prompt_initial_text+user_intro_text+travel_itinerary_text
     
