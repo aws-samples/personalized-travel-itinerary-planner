@@ -99,13 +99,23 @@ def get_user_data(user_id):
     else:
         travel_itinerary_text = str(user_first_name) + " does not have any upcoming travel that we know of."
 
-    addtl_instructions = "Can you answer the question mentioned below, considering the above provided information about the user? Start your response with Hello "+str(user_first_name) 
+    addtl_instructions = "Can you answer the question mentioned below, considering "+str(user_first_name)+ "'s hobbies, interests, favorite food and travel plans mentioned above? Start your response with Hello "+str(user_first_name) 
 
-    prompt_text = prompt_initial_text+user_intro_text+travel_itinerary_text+addtl_instructions
+    prompt_text = prompt_initial_text+user_intro_text+travel_itinerary_text
     
     prompt_text = prompt_text.replace('"', '\\"')
+
+    prompt_format =    """
+    Current conversation:
+    {history}
+
+    Human: {input}
+    AI:
+    """
+
+    prompt_template = prompt_text + prompt_format + addtl_instructions
     
-    return prompt_text
+    return prompt_template
 
 def get_bedrock_chain(user_id):
     profile = "default"
@@ -122,16 +132,7 @@ def get_bedrock_chain(user_id):
     )
     claude_llm.model_kwargs = {"temperature": 0.5, "max_tokens_to_sample": 300}
 
-    prompt_text = get_user_data(user_id)
-
-    prompt_format =    """
-    Current conversation:
-    {history}
-
-    Human: {input}
-    AI:"""
-
-    prompt_template = prompt_text + prompt_format
+    prompt_template = get_user_data(user_id)
 
     pt = PromptTemplate(
         input_variables=["history", "input"], template=prompt_template
