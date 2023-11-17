@@ -39,8 +39,8 @@ def get_user_data(user_id):
     select u.u_full_name as full_name, u.u_first_name as first_name, 
     u.u_age as age, u.u_city as home_city, u.u_country as home_country, u.u_interest as hobbies_interest, u.u_fav_food as favorite_food,
     b.b_city as travel_city, b.b_country as travel_country, b.b_checkin as from_date, b.b_checkout as to_date
-    from ext_spectrum.user_profile u
-    join ext_spectrum.hotel_booking b on b.b_user_id = u.u_user_id
+    from travel.user_profile u
+    left outer join travel.hotel_booking b on b.b_user_id = u.u_user_id
     where u.u_user_id = {user_id}
     ORDER BY b.b_checkin;
     """
@@ -69,13 +69,14 @@ def get_user_data(user_id):
     else:
         print(f'Schema Query Failed with Error: {client.describe_statement(Id=execution_id)["Error"]}')
     
-    user_full_name = records[0][0]["stringValue"]
-    user_first_name = records[0][1]["stringValue"]
-    user_age = records[0][2]["longValue"]
-    user_home_city = records[0][3]["stringValue"]
-    user_home_country = records[0][4]["stringValue"]
-    user_interests = records[0][5]["stringValue"]
-    user_fav_food = records[0][6]["stringValue"]
+    if len(records) > 0:
+        user_full_name = records[0][0]["stringValue"]
+        user_first_name = records[0][1]["stringValue"]
+        user_age = records[0][2]["longValue"]
+        user_home_city = records[0][3]["stringValue"]
+        user_home_country = records[0][4]["stringValue"]
+        user_interests = records[0][5]["stringValue"]
+        user_fav_food = records[0][6]["stringValue"]
 
     travel_itinerary = ''
     
@@ -89,17 +90,23 @@ def get_user_data(user_id):
 
     prompt_initial_text = "You are a Personalized travel agent bot who can answer questions about user\'s upcoming travel that is already planned or you will help plan. You will take into account the  user\'s personal data like home city, age, hobbies, interests and favorite food while answering questions. Date format is YYYY-MM-DD. If you do not know the answer you response should be 'Sorry I'm Unsure of that. Is there something else I can help you with?'. \\n"
     
-    if user_full_name:
+    if len(records) > 0:
         user_intro_text = str(user_full_name) + " who is of age " + str(user_age) + " , lives in " + str(user_home_city) + ", " + str(user_home_country) + " has hobbies or is interested in " + str(user_interests) +". " + str(user_first_name) + "\'s favorite food is " + str(user_fav_food) + ".\\n"
     else: 
         user_intro_text = "This is a new user in our system and we do not have any information about this user"
     
-    if travel_itinerary:
-        travel_itinerary_text = "Below are the list of cities " + str(user_first_name) + " will be travelling to. \\n" + str(travel_itinerary)
-    else:
-        travel_itinerary_text = str(user_first_name) + " does not have any upcoming travel that we know of."
+    if len(records) > 0:
+        if travel_itinerary:
+            travel_itinerary_text = "Below are the list of cities " + str(user_first_name) + " will be travelling to. \\n" + str(travel_itinerary)
+        else:
+            travel_itinerary_text = str(user_first_name) + " does not have any upcoming travel that we know of."
+    else: 
+        travel_itinerary_text = ' '
 
-    addtl_instructions = "Can you answer the question mentioned above, considering "+str(user_first_name)+ "'s hobbies, interests, favorite food and travel plans mentioned above? Do not repeat the cities and countries that "+ str(user_first_name)+" is already travelling to. Start your response with Hello "+str(user_first_name) 
+    if len(records) > 0:
+        addtl_instructions = "Can you answer the question mentioned above, considering "+str(user_first_name)+ "'s hobbies, interests, favorite food and travel plans mentioned above? Do not repeat the cities and countries that "+ str(user_first_name)+" is already travelling to. Start your response with Hello "+str(user_first_name) 
+    else: 
+        addtl_instructions = "Can you answer the question mentioned above? Start your response with Hello "
 
     prompt_text = prompt_initial_text+user_intro_text+travel_itinerary_text
     

@@ -120,7 +120,7 @@ Resources:
   RedshiftServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: RedshiftImmersionRole
+      RoleName: RedshiftTravelBookingRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
