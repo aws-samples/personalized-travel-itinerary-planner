@@ -139,12 +139,6 @@ Resources:
         - Effect: Allow
           Principal:
             Service:
-            - glue.amazonaws.com
-          Action:
-          - sts:AssumeRole
-        - Effect: Allow
-          Principal:
-            Service:
             - events.amazonaws.com
           Action:
           - sts:AssumeRole
@@ -169,112 +163,11 @@ Resources:
       Path: /
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonS3FullAccess
-      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
-      - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
       - arn:aws:iam::aws:policy/AmazonRedshiftFullAccess
       - arn:aws:iam::aws:policy/AWSLambda_FullAccess
       - arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess
       - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       - !Ref BedrockManagedPolicy
-  GlueLoadRedshiftRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "GlueLoadRedshiftRole"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - glue.amazonaws.com
-            - lambda.amazonaws.com
-          Action:
-          - sts:AssumeRole
-      Path: /
-      Policies:
-      - PolicyName: LambdaCloudFormationPolicy
-        PolicyDocument:
-          Version: 2012-10-17
-          Statement:
-          - Effect: Allow
-            Action:
-            - s3:*
-            Resource:
-            - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}"
-            - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}"
-            - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}/*"
-            - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}/*"
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
-      - arn:aws:iam::aws:policy/AmazonS3FullAccess
-      - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
-      - arn:aws:iam::aws:policy/AmazonRDSDataFullAccess
-  LambdaStartCrawler:
-    Type: "AWS::Lambda::Function"
-    Properties:
-      FunctionName: !Sub "StartGlueCrawler"
-      Role: !GetAtt 'GlueLoadRedshiftRole.Arn'
-      Timeout: 300
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import cfnresponse
-          import logging
-
-          logging.basicConfig()
-          logger = logging.getLogger(__name__)
-          logger.setLevel(logging.INFO)
-
-          glue = boto3.client('glue')
-
-          def handler(event, context):
-            logger.info(json.dumps(event))
-            if event['RequestType'] != 'Create':
-                cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'NA'})
-            else:
-                try:
-                  crawler = event['ResourceProperties']['crawler']
-
-                  response = glue.start_crawler(
-                    Name=crawler)
-
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'Glue Crawler Started successfully.'})
-
-                except Exception as e:
-                  logger.info(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Data': 'Glue Crawler Issue'})
-      Handler: index.handler
-      Runtime: python3.9
-    DependsOn:
-    - GlueLoadRedshiftRole
-  GlueExternalDatabase:
-    Type: AWS::Glue::Database
-    Properties:
-      CatalogId:
-        Ref: AWS::AccountId
-      DatabaseInput:
-        Name: !Sub "hotelbookingdb"
-        Description: "aws glue data catalog database for hotel booking information"
-  GlueCrawlerBookingInfo:
-    Type: AWS::Glue::Crawler
-    DependsOn:
-    - RedshiftServiceRole
-    Properties:
-      Role: !GetAtt 'RedshiftServiceRole.Arn'
-      Name: !Sub "BookingInformationCrawler"
-      DatabaseName: !Ref GlueExternalDatabase
-      Targets:
-        S3Targets:
-        - Path: "s3://redshift-blogs/genai-prompt-engineering/travel-data/"
-  InitStartCrawlerBooking:
-    Type: Custom::InitStartCrawlerBooking
-    DependsOn:
-    - LambdaStartCrawler
-    - GlueCrawlerBookingInfo
-    Properties:
-      ServiceToken: !GetAtt 'LambdaStartCrawler.Arn'
-      crawler: !Ref GlueCrawlerBookingInfo
   RedshiftNamespace:
     Type: 'AWS::RedshiftServerless::Namespace'
     Properties:
@@ -317,7 +210,7 @@ Resources:
   RedshiftServerlessSecret:
     Type: 'AWS::SecretsManager::Secret'
     Properties:
-      Name: RedshiftServerlessSecret
+      Name: RedshiftTravelBookingSecret
       Description: This secret is for Redshift Serverless
       SecretString: '{"username":"awsuser","password":"Awsuser123"}'
       Tags:
@@ -545,9 +438,3 @@ Outputs:
     Description: Secret Name and ARN that will be used to connect to Redshift Cluster
     Value:
       Fn::GetAtt: [RedshiftServerlessSecret, Id]
-  GlueExternalDatabaseName:
-    Description: "The name of the external database"
-    Value: !Ref GlueExternalDatabase
-  GlueCrawlerName:
-    Description: "The name of the external database"
-    Value: !Ref GlueCrawlerBookingInfo
