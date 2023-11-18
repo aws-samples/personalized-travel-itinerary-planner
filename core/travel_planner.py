@@ -137,7 +137,7 @@ def get_bedrock_chain(user_id):
     claude_llm = Bedrock(
         model_id=modelId, client=bedrock, credentials_profile_name=profile
     )
-    claude_llm.model_kwargs = {"temperature": 0.5, "max_tokens_to_sample": 300}
+    claude_llm.model_kwargs = {"temperature": 0.5, "max_tokens_to_sample": 4096}
 
     prompt_template = get_user_data(user_id)
 
