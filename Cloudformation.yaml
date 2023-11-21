@@ -115,7 +115,8 @@ Resources:
         - Sid: AllowBedrockfunctions
           Effect: Allow
           Action:
-          - "bedrock:*"
+          - "bedrock:InvokeModel"
+          - "bedrock:InvokeModelWithResponseStream"
           Resource: "*"
   RedshiftServiceRole:
     Type: AWS::IAM::Role
@@ -270,10 +271,30 @@ Resources:
         - AZ: !Select [0, !FindInMap ["AZRegions", !Ref "AWS::Region", "AZs"]]
       VpcId:
         Ref: VPC
+  # EC2 and ALB Security Groups
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ELB Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
+
+  ELBSecurityGroupSelfReferenceEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow all outbound traffic
+      GroupId: !GetAtt [ELBSecurityGroup, GroupId]
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group
+      GroupDescription: EC2 Security group
       VpcId:
         Ref: VPC
       SecurityGroupIngress:
@@ -284,16 +305,19 @@ Resources:
       - IpProtocol: tcp
         FromPort: 8080
         ToPort: 8080
-        CidrIp: "0.0.0.0/0"
-  SecurityGroupSelfReference:
-    Type: AWS::EC2::SecurityGroupIngress
+        SourceSecurityGroupId:
+          Fn::GetAtt:
+          - ELBSecurityGroup
+          - GroupId
+
+  SecurityGroupSelfReferenceEgress:
+    Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      Description: Self Referencing Rule
-      FromPort: -1
-      IpProtocol: -1
+      Description: Allow all outbound traffic
       GroupId: !GetAtt [SecurityGroup, GroupId]
-      SourceSecurityGroupId: !GetAtt [SecurityGroup, GroupId]
-      ToPort: -1
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
   InternetGateway:
     Type: AWS::EC2::InternetGateway
   AttachGateway:
@@ -360,6 +384,7 @@ Resources:
       Path: "/"
       Roles:
       - !Ref RedshiftServiceRole
+
   EC2Instance:
     Type: AWS::EC2::Instance
     Metadata:
@@ -400,6 +425,49 @@ Resources:
       Tags:
       - Key: Name
         Value: ec2-bedrock-client
+
+    # Target Group, Listener and Application  Load Balancer
+  EC2TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 15
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Name: EC2TargetGroup
+      Port: 8080
+      Protocol: HTTP
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: '20'
+      Targets:
+      - Id: !Ref EC2Instance
+        Port: 8080
+      UnhealthyThresholdCount: 3
+      VpcId: !Ref VPC
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref EC2TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 8080
+      Protocol: HTTP
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - !Ref Subnet1
+      - !Ref Subnet2
+      - !Ref Subnet3
+      SecurityGroups:
+      - !GetAtt ELBSecurityGroup.GroupId
 
 Outputs:
   NamespaceName:
