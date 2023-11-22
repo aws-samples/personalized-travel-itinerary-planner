@@ -38,13 +38,18 @@ Parameters:
     Type: String
     MinLength: 9
     MaxLength: 18
-    Default: 0.0.0.0/0
-    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    AllowedPattern: (?!0.0.0.0/0)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form xxx.xxx.xxx.xxx/xx and should not be 0.0.0.0/0
   KeyName:
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
     Type: AWS::EC2::KeyPair::KeyName
     ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  CertificateARN:
+    Description: Certificate that needs to be added to the Load Balancer
+    Type: String
+  AuthName:
+    Type: String
+    Description: Unique Auth Name for Cognito Resources
 
 Mappings:
   SubnetConfig:
@@ -117,6 +122,11 @@ Resources:
           Action:
           - "bedrock:InvokeModel"
           - "bedrock:InvokeModelWithResponseStream"
+          Resource: "*"
+        - Sid: AllowKMSFunctions
+          Effect: Allow
+          Action:
+          - "kms:Decrypt"
           Resource: "*"
   RedshiftServiceRole:
     Type: AWS::IAM::Role
@@ -208,12 +218,31 @@ Resources:
       - Ref: SecurityGroup
     DependsOn:
     - RedshiftNamespace
+  RedshiftSecretKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS Key to Manage Redshift Secret
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: "key-consolepolicy-3"
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS: !Join
+            - ''
+            - - 'arn:aws:iam::'
+              - !Ref AWS::AccountId
+              - :root
+          Action: kms:*
+          Resource: "*"
   RedshiftServerlessSecret:
     Type: 'AWS::SecretsManager::Secret'
     Properties:
       Name: RedshiftTravelBookingSecret
       Description: This secret is for Redshift Serverless
       SecretString: '{"username":"awsuser","password":"Awsuser123"}'
+      KmsKeyId: !Ref RedshiftSecretKMSKey
       Tags:
       - Key: RedshiftDataFullAccess
         Value: serverless
@@ -279,8 +308,8 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 8080
-        ToPort: 8080
+        FromPort: 443
+        ToPort: 443
         CidrIp: 0.0.0.0/0
 
   ELBSecurityGroupSelfReferenceEgress:
@@ -448,15 +477,69 @@ Resources:
       UnhealthyThresholdCount: 3
       VpcId: !Ref VPC
 
-  ALBListener:
+  # ALBListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     DefaultActions:
+  #     - Type: forward
+  #       TargetGroupArn: !Ref EC2TargetGroup
+  #     LoadBalancerArn: !Ref ApplicationLoadBalancer
+  #     Port: 8080
+  #     Protocol: HTTP
+
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Sub ${AuthName}-user-pool
+      AutoVerifiedAttributes:
+      - email
+      MfaConfiguration: "OFF"
+      Schema:
+      - Name: email
+        AttributeDataType: String
+        Mutable: false
+        Required: true
+
+  UserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: !Sub ${AuthName}-client
+      GenerateSecret: true
+      UserPoolId: !Ref UserPool
+      AllowedOAuthFlowsUserPoolClient: True
+      AllowedOAuthFlows:
+      - code
+      AllowedOAuthScopes:
+      - openid
+      SupportedIdentityProviders:
+      - COGNITO
+      CallbackURLs:
+      - "https://replace_your_LB_url_here/oauth2/idpresponse"
+
+  UserPoolDomain:
+    Type: "AWS::Cognito::UserPoolDomain"
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: "travelplanner"
+
+  ALBListener2:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Ref CertificateARN
       DefaultActions:
+      - Type: 'authenticate-cognito'
+        AuthenticateCognitoConfig:
+          UserPoolArn: !GetAtt 'UserPool.Arn'
+          UserPoolClientId: !Ref UserPoolClient
+          UserPoolDomain: !Ref UserPoolDomain
+        Order: 1
       - Type: forward
         TargetGroupArn: !Ref EC2TargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: 8080
-      Protocol: HTTP
+        Order: 2
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -506,3 +589,7 @@ Outputs:
     Description: Secret Name and ARN that will be used to connect to Redshift Cluster
     Value:
       Fn::GetAtt: [RedshiftServerlessSecret, Id]
+  URL:
+    Description: Use this URL to update the callback URL in Cognito User Pool client and also to access the app
+    Value:
+      Fn::GetAtt: [ApplicationLoadBalancer, DNSName]
