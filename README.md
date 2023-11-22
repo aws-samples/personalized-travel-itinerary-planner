@@ -23,25 +23,56 @@ Launch the following AWS CloudFormation template to deploy Amazon Redshift Serve
 <a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=travelplanner&templateURL=https://redshift-blogs.s3.amazonaws.com/genai-prompt-engineering/genai-redshift-prompt-engineering.yaml"> <img src="docs/LaunchStack.png" alt="Bedrock Access" width="100"/> </a>
 
 
-Step 3: Copy the Redshift Database Workgroup Name, Secret ARN in a notepad from the Outputs tab of the Cloudformation Stack. 
+Step 3: Copy the Redshift Database Workgroup Name, Secret ARN, URL and Redshift Service Role ARN (highlighted below) in a notepad from the Outputs tab of the Cloudformation Stack. 
  
 <img src="docs/CF_Output.jpg" alt="CFN Output" width="400"/>
 
-Step 4: Connect to the EC2 instance that was created using SSH Connect from the AWS Console
+Step 4: Connect to the EC2 instance using SSH 
+        -	Open an SSH Client
+        -	Locate your private key file that was entered while launching the cloudformation stack
+        -	Change the permissions of the private key file to 400 (chmod 400 id_rsa)
+        -	Connect to the instance using its Public DNS or IP address 
+        	Example: ssh -i “id_rsa” ec2-user@ ec2-54-xxx-xxx-187.compute-1.amazonaws.com
 
-Step 5: Update the configuration file “data_feed_config.ini” with the Region, Workgroup Name and Secret ARN that was copied in Step2.  
+
+Step 5: Update the configuration file “data_feed_config.ini” with the Region, Workgroup Name and Secret ARN that was copied in Step 3.  
 
 <img src="docs/CONFIG_INI.jpg" alt="Config Update" width="400"/>
  
-Step 6: Run the below commands to Create DDL and Launch the Web service. 
+Step 6: Run the below command to create the database objects that contains the user information and the travel booking data
 
-python3 ~/personalized_travel_itinerary_planner/core/redshift_ddl.py
+```python3 ~/personalized-travel-itinerary-planner/core/redshift_ddl.py```
 
-streamlit run ~/personalized_travel_itinerary_planner/core/chatbot_app.py --server.port=8080 &
+This command creates the “travel” schema along with the tables named “user_profile” and “hotel_booking” 
 
-Step 7: Copy the External URL from the Output of the above command and launch the URL in a browser
+Step 7: Run the below command to launch the web service
 
-Step 8: Enter the User ID: 1028169
+```streamlit run ~/personalized-travel-itinerary-planner/core/chatbot_app.py --server.port=8080 &```
+
+Step 8: Create a user account to login to the app 
+-	On AWS Console navigate to Amazon Cognito page. 
+-	Select the userpool that was created as part of cloudformation stack (travelplanner-user-pool)  
+-	Click Create User
+-	Enter user name, email, password and click Create User
+
+Step 9: Update the Callback URL on Cognito
+-	On AWS Console navigate to Amazon Cognito page. 
+-	Select the userpool that was created as part of cloudformation stack (travelplanner-user-pool)  
+-	Under the “App Integration” Tab > “App Client List” section > Select the client that was created (travelplanner-client)
+-	On the Hosted UI section Click Edit 
+-	Replace the text “replace_your_LB_url” with the URL that was copied from the cloudformation output tab in Step 3. Please convert the URL to Lowercase text if it’s not done already. 
+-	Click Save Changes
+
+Step 10: In a new browser window enter https://<URL copied from Step3> and login using the username and password that was created in Step 8. Change the password if prompted.
+
+Step 11: Enter the User ID: 1028169
+
+Step 12: Ask any question to the bot. Some samples shown below
+-	Can you plan a detailed itinerary for my July trip? 
+-	Should I carry a jacket for my upcoming trip?
+-	Can you recommend some places to travel in March? 
+
+
 
 
 ## Security
