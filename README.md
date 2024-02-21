@@ -20,7 +20,7 @@ Step 2: Launch the AWS CloudFormation template
 Launch the following AWS CloudFormation template to deploy Amazon Redshift Serverless cluster along with all the related components, including the EC2 instance to host the webapp. Provide a Stack Name and an SSH Keypair and Deploy the Cloudformation template. 
 
 
-<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=travelplanner&templateURL=https://redshift-blogs.s3.amazonaws.com/genai-prompt-engineering/genai-redshift-prompt-engineering.yaml"> <img src="docs/LaunchStack.png" alt="Bedrock Access" width="100"/> </a>
+<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=travelplanner&templateURL=https://aws-blogs-artifacts-public.s3.amazonaws.com/artifacts/BDB-3842/Cloudformation.yaml"> <img src="docs/LaunchStack.png" alt="Bedrock Access" width="100"/> </a>
 
 
 Step 3: Copy the Redshift Database Workgroup Name, Secret ARN, URL and Redshift Service Role ARN (highlighted below) in a notepad from the Outputs tab of the Cloudformation Stack. 
