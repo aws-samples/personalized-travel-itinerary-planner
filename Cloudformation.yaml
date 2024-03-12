@@ -520,7 +520,7 @@ Resources:
     Type: "AWS::Cognito::UserPoolDomain"
     Properties:
       UserPoolId: !Ref UserPool
-      Domain: "travelplanner"
+      Domain: !Sub ${AuthName}-domain
 
   ALBListener2:
     Type: AWS::ElasticLoadBalancingV2::Listener
