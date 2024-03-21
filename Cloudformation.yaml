@@ -84,7 +84,7 @@ Mappings:
     ca-central-1:
       AZs: ["a", "b"]
     eu-central-1:
-      AZs: ["a", "b"]
+      AZs: ["a", "b", "c"]
     eu-west-1:
       AZs: ["a", "b"]
     eu-west-2:
