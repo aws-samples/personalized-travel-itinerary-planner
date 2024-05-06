@@ -35,11 +35,11 @@ def execute_query(query):
     return status
 
 schema_query = """
-create schema travel authorization awsuser
+create schema transactions authorization awsuser
 """
 
 user_query = """
-CREATE TABLE travel.user_profile 
+CREATE TABLE transactions.user_profile 
 (
   u_user_id     VARCHAR(50) NOT NULL,
   u_full_name       VARCHAR(50) NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE travel.user_profile
 )
 """
 booking_query = """
-CREATE TABLE travel.hotel_booking 
+CREATE TABLE transactions.hotel_booking 
 (
   b_user_id     INTEGER NOT NULL,
   b_checkin       DATE NOT NULL,
@@ -68,13 +68,13 @@ CREATE TABLE travel.hotel_booking
 """
 
 load_user_data = f"""
-copy travel.user_profile  from 's3://redshift-blogs/genai-prompt-engineering/travel-data/user_profile/' 
+copy transactions.user_profile  from 's3://redshift-blogs/genai-prompt-engineering/travel-data/user_profile/' 
 IAM_ROLE '{iam_role}'
 FORMAT AS PARQUET
 """
 
 load_booking_data = f"""
-copy travel.hotel_booking  from 's3://redshift-blogs/genai-prompt-engineering/travel-data/hotel_booking/' 
+copy transactions.hotel_booking  from 's3://redshift-blogs/genai-prompt-engineering/travel-data/hotel_booking/' 
 IAM_ROLE '{iam_role}'
 FORMAT AS PARQUET
 """

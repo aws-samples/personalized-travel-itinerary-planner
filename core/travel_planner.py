@@ -12,13 +12,17 @@ from langchain.prompts import PromptTemplate
 
 def get_bedrock():
     
-    bedrock = boto3.client(service_name='bedrock-runtime', region_name = 'us-east-1')
+    bconfig = ConfigParser()
+    bconfig.read(os.path.join(os.path.dirname(__file__), 'data_feed_config.ini'))
+    region = bconfig["GLOBAL"]["region"]
+    
+    bedrock = boto3.client(service_name='bedrock-runtime', region_name = region)
 
     return bedrock
 
-def get_redshift_client():
+def get_redshift_client(region): 
     
-    client = boto3.client('redshift-data', region_name = 'us-east-1')
+    client = boto3.client('redshift-data', region_name = region)
 
     return client
 
@@ -31,16 +35,17 @@ def get_user_data(user_id):
     workgroup = config["GLOBAL"]["workgroup"]
     secarn = config["GLOBAL"]["secret_arn"]
     database = config["GLOBAL"]["database_name"]
+    region = config["GLOBAL"]["region"]
     
-    client = get_redshift_client()
+    client = get_redshift_client(region)
 
 
     query = f"""
     select u.u_full_name as full_name, u.u_first_name as first_name, 
     u.u_age as age, u.u_city as home_city, u.u_country as home_country, u.u_interest as hobbies_interest, u.u_fav_food as favorite_food,
     b.b_city as travel_city, b.b_country as travel_country, b.b_checkin as from_date, b.b_checkout as to_date
-    from travel.user_profile u
-    left outer join travel.hotel_booking b on b.b_user_id = u.u_user_id
+    from transactions.user_profile u
+    left outer join transactions.hotel_booking b on b.b_user_id = u.u_user_id
     where u.u_user_id = {user_id}
     ORDER BY b.b_checkin;
     """
