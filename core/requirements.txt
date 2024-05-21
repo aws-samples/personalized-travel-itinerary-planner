@@ -2,3 +2,4 @@ streamlit==1.28.1
 boto3
 langchain
 anthropic
+langchain-community
