@@ -39,6 +39,12 @@ def get_user_data(user_id):
     
     client = get_redshift_client(region)
 
+    # Validate and sanitize user_id to prevent SQL injection
+    try:
+        # Ensure user_id is an integer - this prevents SQL injection
+        sanitized_user_id = int(user_id)
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid user_id: must be a valid integer")
 
     query = f"""
     select u.u_full_name as full_name, u.u_first_name as first_name, 
@@ -46,7 +52,7 @@ def get_user_data(user_id):
     b.b_city as travel_city, b.b_country as travel_country, b.b_checkin as from_date, b.b_checkout as to_date
     from transactions.user_profile u
     left outer join transactions.hotel_booking b on b.b_user_id = u.u_user_id
-    where u.u_user_id = {user_id}
+    where u.u_user_id = {sanitized_user_id}
     ORDER BY b.b_checkin;
     """
     print(query)
